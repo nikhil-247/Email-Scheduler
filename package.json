@@ -1,0 +1,16 @@
+{
+  "name": "reachinbox-email-scheduler",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": ["apps/api", "apps/web"],
+  "scripts": {
+    "dev:api": "npm run dev --workspace @reachinbox/api",
+    "dev:worker": "npm run worker:dev --workspace @reachinbox/api",
+    "dev:web": "npm run dev --workspace @reachinbox/web",
+    "build": "npm run build --workspace @reachinbox/api && npm run build --workspace @reachinbox/web",
+    "db:generate": "npm run db:generate --workspace @reachinbox/api",
+    "db:migrate": "npm run db:migrate --workspace @reachinbox/api",
+    "db:studio": "npm run db:studio --workspace @reachinbox/api"
+  },
+  "engines": {"node": ">=20.0.0"}
+}
