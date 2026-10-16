@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
 import Papa from 'papaparse';
 import { AlertCircle, ArrowUpRight, FileUp, LoaderCircle, X } from 'lucide-react';
 import { api, Sender } from '../lib/api';
@@ -11,6 +11,7 @@ export function ComposeModal({ open, onClose, senders, defaultSenderKey, onSched
   const [delaySeconds, setDelaySeconds] = useState(2); const [hourlyLimit, setHourlyLimit] = useState(50); const [senderKey, setSenderKey] = useState(defaultSenderKey);
   const [loading, setLoading] = useState(false); const [error, setError] = useState(''); const [lastAttempt, setLastAttempt] = useState<{ key: string; payload: string } | null>(null);
   const countLabel = useMemo(() => `${recipients.length} email${recipients.length === 1 ? '' : 's'} detected`, [recipients.length]);
+  useEffect(() => { if (defaultSenderKey) setSenderKey(defaultSenderKey); }, [defaultSenderKey]);
   if (!open) return null;
   function handleFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]; if (!file) return; setFileName(file.name); setError('');
