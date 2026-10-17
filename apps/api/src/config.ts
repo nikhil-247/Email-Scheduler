@@ -7,7 +7,7 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1), REDIS_URL: z.string().url().default('redis://localhost:6379'),
   ELASTICSEARCH_URL: z.string().url().default('http://localhost:9200'), ELASTICSEARCH_USERNAME: z.string().optional().default(''), ELASTICSEARCH_PASSWORD: z.string().optional().default(''),
   SESSION_SECRET: z.string().min(32), GOOGLE_CLIENT_ID: z.string().optional().default(''), GOOGLE_CLIENT_SECRET: z.string().optional().default(''), GOOGLE_CALLBACK_URL: z.string().url().default('http://localhost:4000/api/auth/google/callback'),
-  SLACK_CLIENT_ID: z.string().optional().default(''), SLACK_CLIENT_SECRET: z.string().optional().default(''), SLACK_CALLBACK_URL: z.string().url().default('http://localhost:4000/api/integrations/slack/callback'),
+  SLACK_CLIENT_ID: z.string().optional().default(''), SLACK_CLIENT_SECRET: z.string().optional().default(''), SLACK_CALLBACK_URL: z.string().url().default('http://localhost:4000/api/integrations/slack/callback'), TOKEN_ENCRYPTION_KEY: z.string().optional().default(''),
   SMTP_SENDERS_JSON: z.string().default('[]'), DEFAULT_SENDER_KEY: z.string().default('ethereal-primary'),
   WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(5), MIN_SEND_INTERVAL_MS: z.coerce.number().int().min(0).default(2000),
   MAX_EMAILS_PER_HOUR_PER_SENDER: z.coerce.number().int().min(1).default(200), RATE_LIMIT_RETRY_JITTER_MS: z.coerce.number().int().min(0).default(250),
