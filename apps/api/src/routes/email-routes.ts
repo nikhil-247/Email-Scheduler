@@ -22,10 +22,13 @@ emailRouter.post('/schedule', async (req, res, next) => {
     if (!parsed.success) { res.status(400).json({ error: 'Invalid schedule request.', details: parsed.error.flatten() }); return; }
     const input = parsed.data; const user = req.user as Express.User; const senders = getSenders();
     if (!senders.some((s) => s.key === input.senderKey)) { res.status(400).json({ error: 'Unknown senderKey. Configure it in SMTP_SENDERS_JSON first.' }); return; }
-    const uniqueRecipients = [...new Set(input.recipients)];
-    const idempotencyKey = req.header('Idempotency-Key')?.trim() || randomUUID();
+    const idempotencyKey = req.header('Idempotency-Key')?.trim();
+    if (!idempotencyKey) { res.status(400).json({ error: 'Idempotency-Key header is required to prevent duplicate campaign creation.' }); return; }
     if (idempotencyKey.length > 200) { res.status(400).json({ error: 'Idempotency-Key must be at most 200 characters.' }); return; }
-    const startAt = new Date(input.scheduledAt); const campaignName = input.campaignName || input.subject.slice(0, 80);
+    const startAt = new Date(input.scheduledAt);
+    if (startAt.getTime() <= Date.now()) { res.status(400).json({ error: 'scheduledAt must be a future time. Choose a time later than now.' }); return; }
+    const uniqueRecipients = [...new Set(input.recipients)];
+    const campaignName = input.campaignName || input.subject.slice(0, 80);
     let campaign;
     try {
       campaign = await prisma.campaign.create({ data: {
