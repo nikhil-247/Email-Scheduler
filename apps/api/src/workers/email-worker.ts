@@ -37,7 +37,7 @@ function getTransport(senderKey: string) {
 }
 async function requeueAt(emailId: string, runAt: number): Promise<void> {
   const nextJobId = `email-${emailId}-retry-${runAt}`;
-  const scheduled = await prisma.email.update({ where: { id: emailId }, data: { status: 'SCHEDULED', queueJobId: nextJobId } });
+  const scheduled = await prisma.email.update({ where: { id: emailId }, data: { status: 'SCHEDULED', queueJobId: nextJobId, scheduledAt: new Date(runAt) } });
   await emailQueue.add('send-email', { emailId }, { jobId: nextJobId, delay: Math.max(0, runAt - Date.now()) });
   void indexEmail(scheduled);
 }
