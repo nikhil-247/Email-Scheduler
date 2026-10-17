@@ -3,6 +3,17 @@ import { prisma } from '../lib/prisma.js';
 import { emailIndexQueue, newIndexJobId, EMAIL_INDEX_QUEUE_NAME } from '../lib/index-queue.js';
 import { elasticsearch, EMAIL_INDEX, ensureEmailIndex } from '../lib/elasticsearch.js';
 
+let indexReady: Promise<void> | undefined;
+async function ensureIndexReady(): Promise<void> {
+  if (!indexReady) {
+    indexReady = ensureEmailIndex().catch((error) => {
+      indexReady = undefined;
+      throw error;
+    });
+  }
+  await indexReady;
+}
+
 /**
  * Persist indexing work in BullMQ rather than making the email sender depend on
  * Elasticsearch availability. Repeated indexing is safe because Elasticsearch
@@ -22,7 +33,7 @@ export async function indexEmail(email: Pick<Email, 'id'>): Promise<void> {
 export async function processEmailIndex(emailId: string): Promise<void> {
   const email = await prisma.email.findUnique({ where: { id: emailId } });
   if (!email) return;
-  await ensureEmailIndex();
+  await ensureIndexReady();
   await elasticsearch.index({
     index: EMAIL_INDEX,
     id: email.id,
