@@ -43,7 +43,7 @@ async function requeueAt(emailId: string, runAt: number): Promise<void> {
 }
 async function queueAmbiguousAttemptCheck(emailId: string, runAt: number): Promise<void> {
   const nextJobId = `email-${emailId}-delivery-check-${runAt}`;
-  await prisma.email.update({ where: { id: emailId }, data: { queueJobId: nextJobId } });
+  await prisma.email.update({ where: { id: emailId }, data: { queueJobId: nextJobId, scheduledAt: new Date(runAt) } });
   await emailQueue.add('send-email', { emailId }, { jobId: nextJobId, delay: Math.max(0, runAt - Date.now()) });
 }
 async function processEmail(job: Job<EmailJobData>): Promise<void> {
@@ -80,17 +80,40 @@ async function processEmail(job: Job<EmailJobData>): Promise<void> {
   const claimed = await prisma.email.updateMany({ where: { id: email.id, status: 'SCHEDULED', queueJobId: String(job.id) }, data: { status: 'SENDING', sendingStartedAt: new Date(), attemptCount: { increment: 1 }, failureReason: null } });
   if (claimed.count !== 1) return;
   const current = await prisma.email.findUniqueOrThrow({ where: { id: email.id } });
-  try {
-    const sender = senderProfiles.get(email.senderKey); if (!sender) throw new Error(`SMTP sender "${email.senderKey}" is not configured.`);
-    const info = await getTransport(email.senderKey).sendMail({ from: { name: sender.name, address: sender.email }, to: email.recipient, subject: email.subject, text: email.body });
-    const sent = await prisma.email.update({ where: { id: current.id }, data: { status: 'SENT', sentAt: new Date(), sendingStartedAt: null, smtpMessageId: info.messageId, failureReason: null } });
-    void indexEmail(sent);
-    console.info(`Sent email ${sent.id} to ${sent.recipient}; Ethereal preview: ${nodemailer.getTestMessageUrl(info) ?? 'not available'}`);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown SMTP error'; const finalAttempt = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
-    const updated = await prisma.email.update({ where: { id: current.id }, data: { status: finalAttempt ? 'FAILED' : 'SCHEDULED', sendingStartedAt: null, failureReason: message.slice(0, 4000) } });
-    void indexEmail(updated); if (finalAttempt) console.error(`Email ${current.id} permanently failed: ${message}`); throw error;
+  const sender = senderProfiles.get(email.senderKey);
+  if (!sender) {
+    const message = `SMTP sender "${email.senderKey}" is not configured.`;
+    const failed = await prisma.email.update({ where: { id: current.id }, data: { status: 'FAILED', sendingStartedAt: null, failureReason: message } });
+    void indexEmail(failed);
+    console.error(`Email ${current.id} failed: ${message}`);
+    return;
   }
+
+  // Only an explicit SMTP error enters BullMQ's retry path. A DB error after SMTP
+  // acceptance must not trigger another delivery attempt, because the message may
+  // already be visible in the recipient's mail server / Ethereal preview.
+  const info = await (async () => {
+    try {
+      return await getTransport(email.senderKey).sendMail({ from: { name: sender.name, address: sender.email }, to: email.recipient, subject: email.subject, text: email.body });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown SMTP error';
+      const finalAttempt = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
+      const updated = await prisma.email.update({ where: { id: current.id }, data: { status: finalAttempt ? 'FAILED' : 'SCHEDULED', sendingStartedAt: null, failureReason: message.slice(0, 4000) } });
+      void indexEmail(updated);
+      if (finalAttempt) console.error(`Email ${current.id} permanently failed: ${message}`);
+      throw error;
+    }
+  })();
+
+  let sent;
+  try {
+    sent = await prisma.email.update({ where: { id: current.id }, data: { status: 'SENT', sentAt: new Date(), sendingStartedAt: null, smtpMessageId: info.messageId, failureReason: null } });
+  } catch (databaseError) {
+    console.error(`SMTP accepted email ${current.id}, but the database SENT update failed. Leaving the record in SENDING so recovery can mark it for manual review without blindly resending.`, databaseError);
+    throw databaseError;
+  }
+  void indexEmail(sent);
+  console.info(`Sent email ${sent.id} to ${sent.recipient}; Ethereal preview: ${nodemailer.getTestMessageUrl(info) ?? 'not available'}`);
 }
 const worker = new Worker<EmailJobData>(EMAIL_QUEUE_NAME, processEmail, { connection: redis, concurrency: config.WORKER_CONCURRENCY });
 worker.on('completed', (job) => console.info(`Queue job ${job.id} completed.`));
