@@ -70,6 +70,7 @@ Edit **`apps/api/.env`**, not the committed sample. Never commit real credential
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`: needed for Google login.
 - `SMTP_SENDERS_JSON`: a valid one-line JSON array of SMTP profiles; `DEFAULT_SENDER_KEY` must match a configured `key`.
 - `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`: needed for Slack OAuth.
+- `TOKEN_ENCRYPTION_KEY`: a base64-encoded random 32-byte key used to encrypt Slack bot tokens at rest. Generate it locally with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. Keep it stable and backed up securely; changing it means existing Slack connections need to be reconnected.
 - `WORKER_CONCURRENCY=5`: worker concurrency.
 - `MIN_SEND_INTERVAL_MS=2000`: minimum spacing for the same sender.
 - `MAX_EMAILS_PER_HOUR_PER_SENDER=200`: configurable Redis-backed sender cap.
@@ -94,22 +95,22 @@ Create a test account at https://ethereal.email/. These emails are captured for 
 5. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL` in `apps/api/.env`, then restart the API.
 6. Open the dashboard and sign in with Google. `/api/auth/me` returns the profile; `POST /api/auth/logout` logs out.
 
-The OAuth flow is implemented but cannot sign in until you supply credentials from your Google Cloud project.
+The OAuth flow is implemented but cannot sign in until you supply credentials from your Google Cloud project. Keep the client secret only in `apps/api/.env` and never send it in chat or commit it.
 
 ## Slack OAuth setup
 
 1. Create an app at https://api.slack.com/apps in a test workspace.
 2. Under OAuth & Permissions, add `http://localhost:4000/api/integrations/slack/callback` as a redirect URL.
 3. Add bot scopes `chat:write` and `im:write`, then install/reinstall the app in the workspace.
-4. Set `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, and `SLACK_CALLBACK_URL` in `apps/api/.env`.
-5. Sign in and choose **Connect Slack**. The authorized connection is stored for the user. A real Slack DM is sent when a sender's hourly limit is reached. Without a saved connection, rate limiting still works but notifications are skipped safely.
+4. Generate `TOKEN_ENCRYPTION_KEY` with the command above, then set it together with `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, and `SLACK_CALLBACK_URL` in `apps/api/.env`.
+5. Sign in and choose **Connect Slack**. The authorized connection is stored for the user, with the Slack bot token encrypted using AES-256-GCM and `TOKEN_ENCRYPTION_KEY`. A real Slack DM is sent when a sender's hourly limit is reached. Without a saved connection, rate limiting still works but notifications are skipped safely.
 6. Test disconnect/reconnect using the dashboard.
 
 ## Scheduling, persistence and delivery semantics
 
 - Each recipient is stored as a PostgreSQL row and scheduled via a BullMQ delayed job with a stable ID. Startup reconciliation restores missing jobs. No cron scheduler is used.
 - Redis AOF and named PostgreSQL volumes preserve local state across process/container restarts.
-- The schedule API accepts the `Idempotency-Key` header; replaying the same key for a user returns the existing campaign.
+- The schedule API requires the `Idempotency-Key` header; replaying the same key for a user returns the existing campaign. The key must be stable across retries of one logical request and must be new for a genuinely new campaign. The API also rejects start times that are not in the future.
 - An atomic Redis Lua reservation shares sender/campaign hourly counters and sender spacing across workers. Over-limit jobs are rescheduled to the next available window, not discarded. Users sharing a sender profile share that provider cap.
 - Slack rate-limit alerts are deduplicated by sender/hour/user to avoid flooding the workspace.
 - SMTP cannot guarantee exactly-once delivery after a crash between provider acceptance and database status update. Old `SENDING` records are marked `FAILED` for manual review rather than blindly resent, preferring to avoid duplicates. An SMTP failure may still consume a reserved hourly slot.
@@ -125,6 +126,10 @@ The OAuth flow is implemented but cannot sign in until you supply credentials fr
 - `GET /admin/queues` (Google session + Basic auth)
 
 Schedule body fields: `subject`, `body`, `recipients`, `scheduledAt`, `delaySeconds`, `hourlyLimit`, `senderKey`.
+
+## Continuous integration
+
+GitHub Actions runs the workspace dependency install, Prisma client generation, and API/frontend TypeScript build for pushes and pull requests to `main`. A green workflow is a build check, not proof that Google/Slack OAuth or live SMTP delivery works; those require local credentials and the live checks below.
 
 ## Verification checklist before submission
 
