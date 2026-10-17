@@ -10,7 +10,7 @@ A full-stack TypeScript email scheduler assignment using Express, React, BullMQ,
 - `apps/api/src/workers/email-worker.ts`: dedicated BullMQ worker for SMTP delivery, sender selection, rate limits, retries and Slack alerts.
 - `apps/api/prisma/schema.prisma`: PostgreSQL source of truth for users, campaigns, email states and Slack connections.
 - `apps/api/src/services/queue-recovery.ts`: reconcile `SCHEDULED` database rows with BullMQ jobs at API startup. No cron jobs or cron libraries are used.
-- `apps/api/src/services/email-indexer.ts`: Elasticsearch indexing. PostgreSQL remains authoritative.
+- `apps/api/src/services/email-indexer.ts` plus `apps/api/src/lib/index-queue.ts`: persistent BullMQ search-index jobs with retries and startup reconciliation. PostgreSQL remains authoritative.
 - `apps/web`: React + Vite + TypeScript + Tailwind UI with CSV/TXT import, compose, scheduled/sent/failed views and Slack connection controls.
 - `docker-compose.yml`: PostgreSQL 16, Redis 7 with AOF persistence, Elasticsearch 8.
 
@@ -114,7 +114,7 @@ The OAuth flow is implemented but cannot sign in until you supply credentials fr
 - An atomic Redis Lua reservation shares sender/campaign hourly counters and sender spacing across workers. Over-limit jobs are rescheduled to the next available window, not discarded. Users sharing a sender profile share that provider cap.
 - Slack rate-limit alerts are deduplicated by sender/hour/user to avoid flooding the workspace.
 - SMTP cannot guarantee exactly-once delivery after a crash between provider acceptance and database status update. Old `SENDING` records are marked `FAILED` for manual review rather than blindly resent, preferring to avoid duplicates. An SMTP failure may still consume a reserved hourly slot.
-- Elasticsearch indexes recipient/subject/body for `GET /api/emails/search?q=...`; PostgreSQL is the source of truth. Indexing is best-effort; stronger production repair should use an outbox and reindex worker.
+- Elasticsearch indexes recipient/subject/body for `GET /api/emails/search?q=...`; PostgreSQL is the source of truth. Index operations go through a persistent BullMQ indexing queue with exponential retries; startup reconciliation requeues all current email rows in batches so an interrupted or stale index can be rebuilt. Permanent index failures remain visible in the BullMQ dashboard for inspection.
 
 ## API routes
 
