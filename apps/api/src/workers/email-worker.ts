@@ -4,7 +4,8 @@ import { config, getSenders } from '../config.js';
 import { prisma } from '../lib/prisma.js';
 import { redis } from '../lib/redis.js';
 import { emailQueue, EMAIL_QUEUE_NAME, type EmailJobData } from '../lib/queue.js';
-import { indexEmail } from '../services/email-indexer.js';
+import { emailIndexQueue, EMAIL_INDEX_QUEUE_NAME, type EmailIndexJobData } from '../lib/index-queue.js';
+import { indexEmail, processEmailIndex } from '../services/email-indexer.js';
 import { notifySenderRateLimit } from '../services/slack-notifier.js';
 
 const RESERVE_SEND_SLOT_LUA = `
@@ -117,10 +118,25 @@ async function processEmail(job: Job<EmailJobData>): Promise<void> {
 }
 const worker = new Worker<EmailJobData>(EMAIL_QUEUE_NAME, processEmail, { connection: redis, concurrency: config.WORKER_CONCURRENCY });
 worker.on('completed', (job) => console.info(`Queue job ${job.id} completed.`));
-worker.on('failed', (job, error) => console.error(`Queue job ${job?.id ?? 'unknown'} failed:`, error.message));
-worker.on('error', (error) => console.error('BullMQ worker error:', error));
+worker.on('failed', (job, error) => console.error(`BullMQ email job ${job?.id ?? 'unknown'} failed:`, error.message));
+worker.on('error', (error) => console.error('BullMQ email worker error:', error));
+
+const indexWorker = new Worker<EmailIndexJobData>(
+  EMAIL_INDEX_QUEUE_NAME,
+  (job) => processEmailIndex(job.data.emailId),
+  { connection: redis, concurrency: Math.max(2, config.WORKER_CONCURRENCY) },
+);
+indexWorker.on('completed', (job) => console.info(`Search index job ${job.id} completed.`));
+indexWorker.on('failed', (job, error) => console.error(`Search index job ${job?.id ?? 'unknown'} failed and will follow BullMQ retry policy:`, error.message));
+indexWorker.on('error', (error) => console.error('BullMQ indexing worker error:', error));
 console.info(`Email worker online. Concurrency=${config.WORKER_CONCURRENCY}, minimum sender interval=${config.MIN_SEND_INTERVAL_MS}ms, per-sender hourly cap=${config.MAX_EMAILS_PER_HOUR_PER_SENDER}.`);
+console.info(`Elasticsearch indexing worker online. Concurrency=${Math.max(2, config.WORKER_CONCURRENCY)}.`);
 async function shutdown(signal: string) {
-  console.info(`${signal} received; shutting down worker...`); await worker.close(); await emailQueue.close(); await prisma.$disconnect(); await redis.quit(); process.exit(0);
+  console.info(`${signal} received; shutting down workers...`);
+  await Promise.all([worker.close(), indexWorker.close()]);
+  await Promise.all([emailQueue.close(), emailIndexQueue.close()]);
+  await prisma.$disconnect();
+  await redis.quit();
+  process.exit(0);
 }
 process.on('SIGINT', () => void shutdown('SIGINT')); process.on('SIGTERM', () => void shutdown('SIGTERM'));
