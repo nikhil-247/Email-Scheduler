@@ -13,12 +13,13 @@ import { configurePassport } from './auth.js';
 import { prisma } from './lib/prisma.js';
 import { redis } from './lib/redis.js';
 import { emailQueue } from './lib/queue.js';
+import { emailIndexQueue } from './lib/index-queue.js';
 import { ensureEmailIndex } from './lib/elasticsearch.js';
 import { authRouter } from './routes/auth-routes.js';
 import { integrationRouter } from './routes/integration-routes.js';
 import { emailRouter } from './routes/email-routes.js';
 import { requireAuth } from './middleware/auth.js';
-import { indexEmail } from './services/email-indexer.js';
+import { enqueueAllEmailIndexes, indexEmail } from './services/email-indexer.js';
 import { enqueueScheduledEmails } from './services/queue-recovery.js';
 
 async function recoverScheduledEmails() {
@@ -49,7 +50,7 @@ async function main() {
   app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'reachinbox-email-scheduler', timestamp: new Date().toISOString() }));
   app.use('/api/auth', authRouter); app.use('/api/integrations', integrationRouter); app.use('/api/emails', emailRouter);
   const serverAdapter = new ExpressAdapter(); serverAdapter.setBasePath('/admin/queues');
-  createBullBoard({ queues: [new BullMQAdapter(emailQueue)], serverAdapter });
+  createBullBoard({ queues: [new BullMQAdapter(emailQueue), new BullMQAdapter(emailIndexQueue)], serverAdapter });
   app.use('/admin/queues', requireAuth, (req, res, next) => {
     const authHeader = req.header('authorization');
     if (!authHeader?.startsWith('Basic ')) { res.setHeader('WWW-Authenticate', 'Basic realm="BullMQ Dashboard"'); res.status(401).send('Authentication required'); return; }
@@ -60,12 +61,14 @@ async function main() {
   }, serverAdapter.getRouter());
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => { console.error('API error:', error); if (res.headersSent) return; res.status(500).json({ error: 'Internal server error. Check the API logs for details.' }); });
   await prisma.$connect();
-  try { await ensureEmailIndex(); } catch (error) { console.error('Elasticsearch unavailable at startup; indexing will retry per record:', error); }
+  try { await ensureEmailIndex(); } catch (error) { console.error('Elasticsearch unavailable at startup; the persistent indexing worker will retry:', error); }
+  const searchJobsQueued = await enqueueAllEmailIndexes();
+  console.info(`Queued ${searchJobsQueued} existing email records for Elasticsearch indexing/reconciliation.`);
   await recoverScheduledEmails();
   const server = app.listen(config.API_PORT, () => console.info(`API listening on http://localhost:${config.API_PORT}`));
   const shutdown = async (signal: string) => {
     console.info(`${signal} received; shutting down API...`);
-    server.close(async () => { await emailQueue.close(); await prisma.$disconnect(); await sessionClient.quit(); await redis.quit(); process.exit(0); });
+    server.close(async () => { await Promise.all([emailQueue.close(), emailIndexQueue.close()]); await prisma.$disconnect(); await sessionClient.quit(); await redis.quit(); process.exit(0); });
   };
   process.on('SIGINT', () => void shutdown('SIGINT')); process.on('SIGTERM', () => void shutdown('SIGTERM'));
 }
