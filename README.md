@@ -84,7 +84,7 @@ SMTP_SENDERS_JSON=[{"key":"ethereal-primary","name":"ReachInbox Demo","email":"Y
 DEFAULT_SENDER_KEY=ethereal-primary
 ```
 
-Create a test account at https://ethereal.email/. These emails are captured for preview rather than delivered to real inboxes. A preview URL is logged by the worker.
+Create **two separate test sender accounts** at https://ethereal.email/ so the multiple-sender requirement can be demonstrated. Put both account profiles into the same `SMTP_SENDERS_JSON` array using distinct `key` values (for example `ethereal-primary` and `ethereal-secondary`), and use each account's own generated `email`, SMTP username, and password. The SMTP host is `smtp.ethereal.email`, port `587`, with `secure=false` (STARTTLS). These emails are captured for preview rather than delivered to real inboxes. A preview URL is logged by the worker.
 
 ## Google OAuth setup
 
