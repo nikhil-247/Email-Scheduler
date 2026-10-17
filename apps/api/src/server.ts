@@ -28,7 +28,7 @@ async function recoverScheduledEmails() {
   if (interrupted.length) {
     const ambiguity = 'Worker stopped during SMTP delivery. Delivery outcome may be ambiguous; not auto-resending to avoid duplicates.';
     await prisma.email.updateMany({ where: { id: { in: interrupted.map((email) => email.id) }, status: 'SENDING' }, data: { status: 'FAILED', sendingStartedAt: null, failureReason: ambiguity } });
-    interrupted.forEach((email) => { void indexEmail({ ...email, status: 'FAILED', sendingStartedAt: null, failureReason: ambiguity }); });
+    interrupted.forEach((email) => { void indexEmail(email); });
     console.warn(`Marked ${interrupted.length} interrupted SMTP attempts as failed for manual review.`);
   }
   const recovered = await enqueueScheduledEmails();
