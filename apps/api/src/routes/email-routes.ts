@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { z } from 'zod';
 import { config, getSenders } from '../config.js';
+import { emailScheduleSchema } from '../schemas/email-schedule.js';
 import { prisma } from '../lib/prisma.js';
 import { elasticsearch, EMAIL_INDEX, ensureEmailIndex } from '../lib/elasticsearch.js';
 import { enqueueScheduledEmails } from '../services/queue-recovery.js';
@@ -8,16 +8,10 @@ import { requireAuth } from '../middleware/auth.js';
 
 export const emailRouter = Router();
 emailRouter.use(requireAuth);
-const scheduleSchema = z.object({
-  subject: z.string().trim().min(1).max(250), body: z.string().trim().min(1).max(100_000),
-  recipients: z.array(z.string().trim().email().transform((v) => v.toLowerCase())).min(1).max(5000),
-  scheduledAt: z.string().datetime({ offset: true }), delaySeconds: z.number().int().min(0).max(3600),
-  hourlyLimit: z.number().int().min(1).max(10_000), senderKey: z.string().min(1), campaignName: z.string().trim().min(1).max(120).optional(),
-});
 emailRouter.get('/senders', (_req, res) => { const senders = getSenders().map(({ key, name, email }) => ({ key, name, email })); res.json({ senders, defaultSenderKey: config.DEFAULT_SENDER_KEY }); });
 emailRouter.post('/schedule', async (req, res, next) => {
   try {
-    const parsed = scheduleSchema.safeParse(req.body);
+    const parsed = emailScheduleSchema.safeParse(req.body);
     if (!parsed.success) { res.status(400).json({ error: 'Invalid schedule request.', details: parsed.error.flatten() }); return; }
     const input = parsed.data; const user = req.user as Express.User; const senders = getSenders();
     if (!senders.some((s) => s.key === input.senderKey)) { res.status(400).json({ error: 'Unknown senderKey. Configure it in SMTP_SENDERS_JSON first.' }); return; }

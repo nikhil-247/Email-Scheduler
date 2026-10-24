@@ -129,7 +129,7 @@ Schedule body fields: `subject`, `body`, `recipients`, `scheduledAt`, `delaySeco
 
 ## Continuous integration
 
-GitHub Actions runs the workspace dependency install, Prisma client generation, and API/frontend TypeScript build for pushes and pull requests to `main`. A green workflow is a build check, not proof that Google/Slack OAuth or live SMTP delivery works; those require local credentials and the live checks below.
+GitHub Actions installs workspace dependencies, generates the Prisma client, runs the API unit tests (`npm test`), and builds the API/frontend TypeScript projects for pushes and pull requests to `main`. The automated tests cover request-schema boundaries, SMTP sender configuration validation, and Slack-token encryption integrity. They do not prove that Google/Slack OAuth, live SMTP delivery, Redis queue recovery, or Elasticsearch search work; those integrations still need the local smoke checks below.
 
 ## Verification checklist before submission
 
