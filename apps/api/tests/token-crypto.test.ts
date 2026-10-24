@@ -25,7 +25,7 @@ describe('Slack token encryption', () => {
     config.TOKEN_ENCRYPTION_KEY = testKey;
     const encrypted = encryptToken('sensitive-token');
     const parts = encrypted.split(':');
-    parts[3] = `${parts[3].slice(0, -1)}${parts[3].endsWith('A') ? 'B' : 'A'}`;
+    parts[3] = `${parts[3][0] === 'A' ? 'B' : 'A'}${parts[3].slice(1)}`;
 
     expect(() => decryptToken(parts.join(':'))).toThrow();
   });
