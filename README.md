@@ -129,7 +129,7 @@ Schedule body fields: `subject`, `body`, `recipients`, `scheduledAt`, `delaySeco
 
 ## Continuous integration
 
-GitHub Actions installs workspace dependencies, generates the Prisma client, runs the API request-schema unit tests (`npm test`), and builds the API/frontend TypeScript projects for pushes and pull requests to `main`. The schema tests cover local payload validation; they do not prove that Google/Slack OAuth, live SMTP delivery, Redis recovery, or Elasticsearch search work. Those integrations still need the local smoke checks below.
+GitHub Actions installs workspace dependencies, generates the Prisma client, runs the API unit tests (`npm test`), and builds the API/frontend TypeScript projects for pushes and pull requests to `main`. The automated tests cover request-schema boundaries, SMTP sender configuration validation, and Slack-token encryption integrity. They do not prove that Google/Slack OAuth, live SMTP delivery, Redis queue recovery, or Elasticsearch search work; those integrations still need the local smoke checks below.
 
 ## Verification checklist before submission
 
