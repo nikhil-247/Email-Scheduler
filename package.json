@@ -8,6 +8,7 @@
     "dev:worker": "npm run worker:dev --workspace @reachinbox/api",
     "dev:web": "npm run dev --workspace @reachinbox/web",
     "build": "npm run build --workspace @reachinbox/api && npm run build --workspace @reachinbox/web",
+    "test": "npm run test --workspace @reachinbox/api",
     "db:generate": "npm run db:generate --workspace @reachinbox/api",
     "db:migrate": "npm run db:migrate --workspace @reachinbox/api",
     "db:studio": "npm run db:studio --workspace @reachinbox/api"
